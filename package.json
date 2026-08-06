@@ -1,0 +1,21 @@
+{
+  "name": "log-ingestion-service",
+  "version": "1.0.0",
+  "description": "High-throughput log ingestion and query service.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Abir-Bassam/log-ingestion-service.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/Abir-Bassam/log-ingestion-service/issues"
+  },
+  "homepage": "https://github.com/Abir-Bassam/log-ingestion-service#readme"
+}
