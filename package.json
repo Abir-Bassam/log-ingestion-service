@@ -3,8 +3,13 @@
   "version": "1.0.0",
   "description": "High-throughput log ingestion and query service.",
   "main": "index.js",
+  "type": "module",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx watch src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test --import tsx tests/*.test.ts"
   },
   "repository": {
     "type": "git",
@@ -13,12 +18,19 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "type": "commonjs",
   "bugs": {
     "url": "https://github.com/Abir-Bassam/log-ingestion-service/issues"
   },
   "homepage": "https://github.com/Abir-Bassam/log-ingestion-service#readme",
   "devDependencies": {
+    "@types/node": "^26.1.2",
+    "@types/pg": "^8.20.4",
+    "tsx": "^4.23.10",
     "typescript": "^7.0.2"
+  },
+  "dependencies": {
+    "dotenv": "^17.4.2",
+    "fastify": "^5.11.2",
+    "pg": "^8.22.0"
   }
 }
