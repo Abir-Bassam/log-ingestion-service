@@ -1,0 +1,49 @@
+services:
+  # حاوية التطبيق
+  app:
+    build: .   # ابنِ من الـ Dockerfile اللي بهالمجلد
+    ports:
+      - "8080:8080"   # اربط منفذ 8080 بجهازك عشان نوصل للـ API
+    environment:
+      # التطبيق بيحكي مع القاعدة باسم الحاوية "db" (مش localhost)،
+      # لأنهم بنفس شبكة Docker الداخلية.
+      DATABASE_URL: postgres://loguser:logpass@db:5432/logs
+      PORT: 8080
+      RETENTION_DAYS: 30
+    depends_on:
+      db:
+        condition: service_healthy   # لا تشغّل التطبيق إلا بعد ما القاعدة تجهز
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"      # حدود الموارد المطلوبة بالمواصفات
+          memory: 256M
+
+  # حاوية قاعدة البيانات
+  db:
+    image: postgres:16-alpine   # صورة PostgreSQL جاهزة
+    environment:
+      POSTGRES_USER: loguser
+      POSTGRES_PASSWORD: logpass
+      POSTGRES_DB: logs
+    # مهم: ما فتحنا منفذ القاعدة للخارج (لا يوجد ports هون) عشان ما
+    # تتعارض مع أي Postgres تاني شغّال على جهازك (زي مشروع التخرج).
+    # التطبيق بيوصلها من جوّا شبكة Docker بدون ما نعرّضها لجهازك.
+    healthcheck:
+      # Docker بيسأل القاعدة "جاهزة؟" كل ثانيتين حتى تجهز.
+      test: ["CMD-SHELL", "pg_isready -U loguser -d logs"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    volumes:
+      # نخزّن بيانات القاعدة بمكان دائم باسم مميّز لهالمشروع، عشان
+      # ما تنمسح لما نوقّف الحاوية، وما تتلخبط مع مشاريع تانية.
+      - log_ingestion_pgdata:/var/lib/postgresql/data
+    deploy:
+      resources:
+        limits:
+          cpus: "1"        # حدود القاعدة المطلوبة بالمواصفات
+          memory: 1G
+
+volumes:
+  log_ingestion_pgdata:   # اسم مميّز لهالمشروع تحديداً

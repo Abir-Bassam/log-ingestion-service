@@ -1,5 +1,8 @@
+// هسا هين بدنا نحط كل الاعدادت في مكان واحد 
+// بنعرف كائن اسمه كونفغ و بنصدره عشان باقي الملفات تقدر تستورده
 export const config = {
-  port: Number(process.env.PORT ?? 8080),
-  databaseUrl: process.env.DATABASE_URL ?? "",
-  retentionDays: Number(process.env.RETENTION_DAYS ?? 30),
+  port: Number(process.env.PORT ?? 8080),//بيقرا من البورت من دوكر افتراضي انه 8080 
+  // لانها دايما بتيجي نصوص بحولها لارقام 
+  databaseUrl: process.env.DATABASE_URL ?? "",// رابط للاتصال بقاعدة البيانات و اذا مش موجود بيرجع نص فاضي
+  retentionDays: Number(process.env.RETENTION_DAYS ?? 30),// بيحفظ اللوغ لمدة 30 يوم افتراضيا و بعدين بدو يحذفها
 };
