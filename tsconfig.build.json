@@ -1,0 +1,10 @@
+{
+  // بيورث كل الإعدادات من tsconfig.json
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "./src",
+    "outDir": "./dist"
+  },
+  // البناء بيشمل src بس — الاختبارات ما بتروح للحاوية
+  "include": ["src"]
+}
