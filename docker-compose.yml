@@ -17,7 +17,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "0.5"      # حدود الموارد المطلوبة بالمواصفات
+          cpus: "0.5"      # حدود الموارد  
           memory: 256M
 
   # حاوية قاعدة البيانات
@@ -43,7 +43,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "1"        # حدود القاعدة المطلوبة بالمواصفات
+          cpus: "1"        # حدود القاعدة  
           memory: 1G
 
 volumes:

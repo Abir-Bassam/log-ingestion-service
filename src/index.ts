@@ -1,42 +1,3 @@
-/*
-import Fastify from "fastify";
-import { config } from "./config/index.js";
-// بنستورد الاعدادات طبعا جافا لانه بدنا نترجمه 
-
-const app = Fastify({ logger: false });// بننشا نسخة من السيرفر و ماي طبع سجل لكل طلب لانه رح يكون تحت ضغط و رح يقلل الاداء
-// بدنا نعرف الاندبوينت ال4
-app.get("/health", async (_req, reply) => {//بيستقبل طلبات من نوع جت و من مسار هيلث
-    // _req معناها مش رح نستخدمه   
-  return reply.code(200).send({ status: "ok" });
-});
-
-app.listen({ port: config.port, host: "0.0.0.0" })// بيشغل السيرفر على المنفذ من الاعدادات اللي عمناها 
-// الهوست عشان ضروري داخل الدوكر عشان الحاوية تكون موصولة من برا
-  .then(() => console.log(`listening on :${config.port}`));// طباعة رسالة تاكيد لما السيرفر يشتغل بنجاح
-*/
-/*
-import Fastify from "fastify";
-import { config } from "./config/index.js"; // بنستورد الاعدادات طبعا جافا لانه بدنا نترجمه 
-import { isDatabaseReady } from "./db/pool.js";
-
-const app = Fastify({ logger: false });
-
-// health endpoint:
-//المولّد بيسأله قبل ما يبعت أي لوغ عشان يتأكد
-// إنه الخدمة جاهزة فعلاً. لهيك ما بنكتفي ب "السيرفر شغّال" 
-// بنتأكد كمان إنه الاتصال بقاعدة البيانات ثابت.
-app.get("/health", async (_req, reply) => {
-  const dbReady = await isDatabaseReady();
-  if (!dbReady) {
-    return reply.code(503).send({ status: "database not ready" });
-  }
-  return reply.code(200).send({ status: "ok" });
-});
-
-app.listen({ port: config.port, host: "0.0.0.0" })
-  .then(() => console.log(`listening on :${config.port}`));
-  */
-
 // بدل ما نفتح المنفذ على طول صار عندي دالة ستارت بتستنى القاعدة تفتح و بعدين بتطبق الماجريشن و بعدها بس بتفتح البورت 
 // هيك ما برجع 200 الا بعد ما تكون الجداول جاهزة فعلا 
 // 200 = health
@@ -45,6 +6,7 @@ import { config } from "./config/index.js";
 import { isDatabaseReady, pool, ensurePartitions } from "./db/pool.js";
 import { runMigrations } from "./db/migrations.js";
 import { registerIngest } from "./routes/ingest.js";
+import { registerQuery } from "./routes/query.js";
 
 const app = Fastify({ logger: false });
 
@@ -75,7 +37,7 @@ async function start(): Promise<void> {
   
   
   registerIngest(app);
-  
+  registerQuery(app);  
   
   await app.listen({ port: config.port, host: "0.0.0.0" });
   console.log(`listening on :${config.port}`);
