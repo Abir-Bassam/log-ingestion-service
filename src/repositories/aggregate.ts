@@ -18,10 +18,13 @@ export interface BucketRow {
 }
 
 // التجميع الزمني. بننفّذه كله جوّا Postgres باستخدام date_bin:
-// عدّ الصفوف بالقاعدة أرخص بكتير من جلبهم لـ Node وعدّهم.
+// عدّ الصفوف بالقاعدة أرخص بكتير من جلبهم لـ Node وعدّهم — خصوصاً
+// وإحنا عنا نص CPU بس.
 export async function aggregateLogs(f: AggregateFilters): Promise<BucketRow[]> {
   const where: string[] = [];
   const params: unknown[] = [];
+
+  // مساعد: بياخد قيمة، بيضيفها للمعاملات، وبيرجّع رمزها ($n).
   const bind = (value: unknown): string => {
     params.push(value);
     return `$${params.length}`;
@@ -31,18 +34,21 @@ export async function aggregateLogs(f: AggregateFilters): Promise<BucketRow[]> {
   where.push(`ts < ${bind(f.until)}`);
   if (f.service !== undefined) where.push(`service = ${bind(f.service)}`);
   if (f.level !== undefined) where.push(`level = ${bind(f.level)}`);
+
   if (f.q !== undefined) {
+    // بنهرّب رموز LIKE الخاصة عشان تنطابق حرفياً.
     const escaped = f.q.replace(/([%_\\])/g, "\\$1");
     where.push(`message ILIKE ${bind(`%${escaped}%`)}`);
   }
+
   for (const { key, value } of f.attrs) {
     where.push(`attributes ->> ${bind(key)} = ${bind(value)}`);
   }
 
-  // بنثبّت بداية السِلال على "الحقبة" (epoch) عشان الحدود تكون
-  // ثابتة ومحاذية دايماً، مش معتمدة على وقت الطلب.
-  // f.interval و f.groupColumn جايين من قائمة بيضاء بالـ service،
-  // مش من المستخدم مباشرة — لهيك آمن نحطهم بالنص.
+  // بنثبّت بداية السِلال على الحقبة (epoch) عشان الحدود تكون ثابتة
+  // ومحاذية دايماً، مش معتمدة على وقت الطلب.
+  // interval و groupColumn جايين من قائمة بيضاء بالـ service، مش من
+  // المستخدم مباشرة — لهيك آمن نحطهم بالنص.
   const bucketExpr = `date_bin(interval '${f.interval}', ts, timestamptz 'epoch')`;
   const groupSelect = f.groupColumn ? `${f.groupColumn}::text` : "NULL::text";
   const groupBy = f.groupColumn ? "GROUP BY 1, 2" : "GROUP BY 1";

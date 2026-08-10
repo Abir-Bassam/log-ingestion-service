@@ -11,6 +11,8 @@ services:
       DATABASE_URL: postgres://loguser:logpass@db:5432/logs
       PORT: 8080
       RETENTION_DAYS: 30
+      AUTH_ENABLED: ${AUTH_ENABLED:-false}
+      LOADGEN_API_KEY: ${LOADGEN_API_KEY:-}
     depends_on:
       db:
         condition: service_healthy   # لا تشغّل التطبيق إلا بعد ما القاعدة تجهز
