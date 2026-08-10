@@ -7,6 +7,7 @@ import { isDatabaseReady, pool, ensurePartitions } from "./db/pool.js";
 import { runMigrations } from "./db/migrations.js";
 import { registerIngest } from "./routes/ingest.js";
 import { registerQuery } from "./routes/query.js";
+import { registerAggregate } from "./routes/aggregate.js";
 
 const app = Fastify({ logger: false });
 
@@ -35,10 +36,11 @@ async function start(): Promise<void> {
   await runMigrations();     // السكيم               
   await ensurePartitions(config.retentionDays);  // الاجزاء اليومية
   
-  
-  registerIngest(app);
-  registerQuery(app);  
-  
+ registerIngest(app);
+ registerQuery(app);
+ registerAggregate(app);
+
+ 
   await app.listen({ port: config.port, host: "0.0.0.0" });
   console.log(`listening on :${config.port}`);
 }
