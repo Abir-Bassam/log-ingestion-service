@@ -3,7 +3,7 @@
 // 200 = health
 import Fastify from "fastify";
 import { config } from "./config/index.js";
-import { isDatabaseReady, pool, ensurePartitions } from "./db/pool.js";
+import { isDatabaseReady, pool, ensurePartitions, startRetentionJob } from "./db/pool.js";
 import { runMigrations } from "./db/migrations.js";
 import { registerIngest } from "./routes/ingest.js";
 import { registerQuery } from "./routes/query.js";
@@ -34,8 +34,8 @@ async function start(): Promise<void> {
   }
 
   await runMigrations();     // السكيم               
-  await ensurePartitions(config.retentionDays);  // الاجزاء اليومية
-  
+  startRetentionJob(config.retentionDays);  // بتعمل الأجزاء + بتحذف القديمة، وبتتكرّر كل ساعة
+    
  registerIngest(app);
  registerQuery(app);
  registerAggregate(app);

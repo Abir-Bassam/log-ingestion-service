@@ -58,3 +58,59 @@ export async function ensurePartitions(retentionDays: number): Promise<void> {
     );
   }
 }
+
+// حذف الأجزاء الأقدم من نافذة الاستبقاء.
+//
+// إسقاط partition عملية metadata بحتة: ما في حذف صف صف، ولا دَين
+// vacuum، والاستقبال بالكاد بيحس فيها. هاد بالظبط سبب اختيارنا
+// التقسيم بالتاريخ من البداية.
+export async function dropExpiredPartitions(retentionDays: number): Promise<void> {
+  const cutoff = new Date(
+    utcMidnight(new Date()).getTime() - retentionDays * 86_400_000
+  );
+
+  // بنجيب أسماء كل الأجزاء اليومية تبعت جدول logs.
+  const { rows } = await pool.query<{ relname: string }>(
+    `SELECT c.relname
+       FROM pg_inherits i
+       JOIN pg_class c ON c.oid = i.inhrelid
+       JOIN pg_class p ON p.oid = i.inhparent
+      WHERE p.relname = 'logs' AND c.relname ~ '^logs_p[0-9]{8}$'`
+  );
+
+  for (const { relname } of rows) {
+    // بنستخرج التاريخ من اسم الجزء: logs_p20260701 → 2026-07-01
+    const digits = relname.slice(6);
+    const day = new Date(
+      Date.UTC(
+        Number(digits.slice(0, 4)),
+        Number(digits.slice(4, 6)) - 1,
+        Number(digits.slice(6, 8))
+      )
+    );
+    if (day < cutoff) {
+      await pool.query(`DROP TABLE IF EXISTS ${relname}`);
+      console.log(`retention: dropped ${relname}`);
+    }
+  }
+
+  // الجزء الاحتياطي (logs_default) بياخد حذف عادي — هو بس بيمسك
+  // الشوارد، فحجمه صغير ومش مشكلة.
+  await pool.query(`DELETE FROM logs_default WHERE ts < $1`, [cutoff]);
+}
+
+// مهمة الصيانة: بتشتغل مرة عند الإقلاع وبعدها كل ساعة.
+export function startRetentionJob(retentionDays: number): void {
+  const tick = async () => {
+    try {
+      await ensurePartitions(retentionDays);      // اعملي أجزاء الأيام الجديدة
+      await dropExpiredPartitions(retentionDays); // احذفي القديمة
+    } catch (err) {
+      // خطأ بالصيانة ما يوقّف الخدمة أبداً — بنسجّله وبنكمّل.
+      console.error("retention job failed:", err);
+    }
+  };
+  void tick();
+  // unref() بتخلّي المؤقّت ما يمنع العملية من الإغلاق.
+  setInterval(tick, 60 * 60 * 1000).unref();
+}
