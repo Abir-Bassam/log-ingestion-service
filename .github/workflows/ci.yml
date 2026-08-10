@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  # تغذية راجعة سريعة: أنواع + اختبارات، بدون حاويات.
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
+  # اختبار العقد بالحالتين، حسب المواصفات:
+  #   ١) AUTH_ENABLED=false → الأربع endpoints بدون بيانات اعتماد
+  #   ٢) AUTH_ENABLED=true  → تشتغل بالمفتاح المزروع، و401 بدونه
+  smoke:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Smoke test (auth disabled)
+        run: |
+          docker compose up -d --build
+          chmod +x scripts/*.sh
+          ./scripts/wait-for-health.sh
+          ./scripts/smoke.sh
+          docker compose down -v
+
+      - name: Smoke test (auth enabled)
+        env:
+          AUTH_ENABLED: "true"
+          LOADGEN_API_KEY: ci-smoke-key
+        run: |
+          docker compose up -d --build
+          chmod +x scripts/*.sh
+          ./scripts/wait-for-health.sh
+          ./scripts/smoke.sh ci-smoke-key
+          docker compose down -v
