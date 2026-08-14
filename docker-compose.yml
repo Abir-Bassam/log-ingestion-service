@@ -1,13 +1,9 @@
-# هون ما بدي افتح بورت للقاعدة عشان ما يتعارض مع مشاريع ثانية الي على دوكر اهم اشي مشروعي التخرج ما يتاثر 
 services:
-  # حاوية التطبيق
   app:
-    build: .   # ابنِ من ال Dockerfile اللي بهالمجلد
+    build: .   
     ports:
-      - "8080:8080"   # اربط منفذ 8080 بجهازك عشان نوصل للـ API
+      - "8080:8080"   
     environment:
-      # التطبيق بيحكي مع القاعدة باسم الحاوية "db" (مش localhost)،
-      # لأنهم بنفس شبكة Docker الداخلية.
       DATABASE_URL: postgres://loguser:logpass@db:5432/logs
       PORT: 8080
       RETENTION_DAYS: 30
@@ -15,38 +11,38 @@ services:
       LOADGEN_API_KEY: ${LOADGEN_API_KEY:-}
     depends_on:
       db:
-        condition: service_healthy   # لا تشغّل التطبيق إلا بعد ما القاعدة تجهز
+        condition: service_healthy   
     deploy:
       resources:
         limits:
-          cpus: "0.5"      # حدود الموارد  
+          cpus: "0.5"      
           memory: 256M
 
-  # حاوية قاعدة البيانات
   db:
-    image: postgres:16-alpine   # صورة PostgreSQL جاهزة
+    image: postgres:16-alpine
+    command: >
+      postgres
+      -c shared_buffers=256MB
+      -c max_wal_size=2GB
+      -c checkpoint_completion_target=0.9
+      -c wal_compression=on
+      -c autovacuum_vacuum_scale_factor=0.05
     environment:
       POSTGRES_USER: loguser
       POSTGRES_PASSWORD: logpass
       POSTGRES_DB: logs
-    # مهم: ما فتحنا منفذ القاعدة للخارج (لا يوجد ports هون) عشان ما
-    # تتعارض مع أي Postgres تاني شغّال على جهازك (زي مشروع التخرج).
-    # التطبيق بيوصلها من جوّا شبكة Docker بدون ما نعرّضها لجهازك.
     healthcheck:
-      # Docker بيسأل القاعدة "جاهزة؟" كل ثانيتين حتى تجهز.
       test: ["CMD-SHELL", "pg_isready -U loguser -d logs"]
       interval: 2s
       timeout: 3s
       retries: 30
     volumes:
-      # نخزّن بيانات القاعدة بمكان دائم باسم مميّز لهالمشروع، عشان
-      # ما تنمسح لما نوقّف الحاوية، وما تتلخبط مع مشاريع تانية.
       - log_ingestion_pgdata:/var/lib/postgresql/data
     deploy:
       resources:
         limits:
-          cpus: "1"        # حدود القاعدة  
+          cpus: "1"        
           memory: 1G
 
 volumes:
-  log_ingestion_pgdata:   # اسم مميّز لهالمشروع تحديداً
+  log_ingestion_pgdata:   
