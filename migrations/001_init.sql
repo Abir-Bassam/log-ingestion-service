@@ -35,7 +35,7 @@ CREATE INDEX logs_level_ts_idx   ON logs (level, ts DESC);
 -- فهرس GIN للبحث بالخصائص. jsonb_path_ops أصغر وأسرع وبيدعم عملية
 -- الاحتواء (@>) اللي بنحتاجها للبحث attr.<key>=<value>.
 CREATE INDEX logs_attrs_idx ON logs USING gin (attributes jsonb_path_ops);
-
--- فهرس trigram عشان البحث النصي الجزئي (q) ما يتحوّل لمسح كامل للجدول.
--- هاد أغلى فهرس وقت الكتابة — منوثّق المقايضة بالـ README.
+-- فهرس trigram للبحث النصي الجزئي (q).
+-- ملاحظة: انشال بـ migration 003 بعد القياس — كان بياكل ٥٨٪ من
+-- معدّل الاستقبال مقابل توفير ~٢ms بس على استعلامات q.
 CREATE INDEX logs_message_trgm_idx ON logs USING gin (message gin_trgm_ops);

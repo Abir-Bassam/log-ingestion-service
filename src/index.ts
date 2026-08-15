@@ -40,6 +40,14 @@ async function start(): Promise<void> {
   registerQuery(app);
   registerAggregate(app);
 
+  app.setErrorHandler((err: { statusCode?: number }, _req, reply) => {
+    if (err.statusCode === 400) {
+      return reply.code(400).send({ error: "malformed JSON body" });
+    }
+    console.error(err);
+    return reply.code(500).send({ error: "internal server error" });
+  });
+
   await app.listen({ port: config.port, host: "0.0.0.0" });
   console.log(`listening on :${config.port} (auth=${authEnabled()})`);
 }
