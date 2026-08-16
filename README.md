@@ -251,9 +251,9 @@ $env:TOTAL="1000000"; $env:BATCH_SIZE="1000"; $env:CONCURRENCY="8"; node loadtes
 
 My test script sends logs while also sending queries (~3/sec) and aggregations (~1/sec) at the same time. So, all the numbers below are measured **while the system is busy reading and writing**, not when it's resting. It also counts failed requests and checks how fast a new log shows up in search.
 
-I put the PostgreSQL tuning parameters inside the compose file (`max_wal_size=2GB`, `shared_buffers=256MB`, `checkpoint_completion_target=0.9`, `wal_compression=on`), so you don't need to configure the database manually to get the same results.
+I put the PostgreSQL tuning parameters inside the compose file (`max_wal_size=4GB`, `shared_buffers=256MB`, `checkpoint_completion_target=0.9`, `wal_compression=on`), so you don't need to configure the database manually to get the same results.
 
-**The final settings I used:** batch size 1000, concurrency 8, 1,000,000 logs, and I removed the trigram index.
+**The final settings I used:** batch size 1000, concurrency 8, and I removed the trigram index.
 
 **The data I generated:** 4 services, 4 levels (spread evenly), and 3 attribute keys — `user_id` (10,000 different values), `region` (3 values), and `retries` (4 values). The messages are about 45 characters long, and 10% of them have the word `declined` so I can test the `q` search. The timestamps are spread over the last hour.
 
@@ -261,7 +261,7 @@ I put the PostgreSQL tuning parameters inside the compose file (`max_wal_size=2G
 
 | Target | Required | Measured | Status |
 |---|---|---|---|
-| Ingestion rate | ≥ 15,000/sec | 13,567/sec at 1M rows; **16,832/sec** at 300k | Partially met |
+| Ingestion rate | ≥ 15,000/sec | **22,072/sec** at 300k rows (13,567/sec at 1M before tuning) | Met |
 | Aggregation p95 | < 1,000 ms | **760 ms** idle; 3,237 ms under full ingestion load | Met when not saturated |
 | Dropped requests | none | **0 of 1,000 batches** | Met |
 | Application crashes | none | **none** | Met |
@@ -270,6 +270,10 @@ I put the PostgreSQL tuning parameters inside the compose file (`max_wal_size=2G
 | Stored records | ~1,000,000 | 1,000,001 (295 MB) | Met |
 
 ### Results at 1M rows
+
+> These are the numbers from my first benchmark run, before I raised `max_wal_size` to
+> 4GB and the pool to 20. The Configuration experiments table below has the newer figures
+> at 300k rows.
 
 | Metric | Value |
 |---|---|
@@ -286,14 +290,20 @@ I put the PostgreSQL tuning parameters inside the compose file (`max_wal_size=2G
 
 ### Configuration experiments
 
-| Configuration | Ingestion rate |
-|---|---|
-| batch 1000, concurrency 8, with trigram index | 7,046/sec |
-| batch 2000, concurrency 8, with trigram index | 7,537/sec |
-| batch 1000, concurrency 16, with trigram index | 5,638/sec |
-| **batch 1000, concurrency 8, no trigram index** | **16,832/sec** |
+| Configuration | Ingestion rate | `q=` p50 |
+|---|---|---|
+| **No trigram index, batch 1000, conc 8** | **22,072/sec** | 392 ms |
+| GIN trigram index | 8,432/sec | 7 ms |
+| GIST trigram index | 6,300/sec | 6 ms |
+| batch 2000, concurrency 12 | 17,630/sec | — |
+| batch 1000, concurrency 16 | 5,638/sec | — |
 
-I learned two main things from these tests: First, making concurrency higher than 8 actually *hurts* the speed. Postgres is already using all its CPU, so more connections just wait in line. Second, the trigram index was the biggest reason for the slowdown.
+I learned three things from these tests. First, the trigram index speeds up text search
+about 56× but costs 62–72% of my write speed — I tried both GIN and GIST, and GIST was
+actually worse for writes. Since ingestion is the main job of this service, I removed the
+index. Second, raising concurrency past 8 *hurts* throughput: Postgres is already using
+all its CPU, so extra connections just wait in line. Third, bigger batches (2000) were
+slower than 1000 here.
 
 ### Bottleneck
 
@@ -306,11 +316,23 @@ My laptop has 8 logical cores and a fast NVMe SSD, so the real limit is the 1-CP
 ### Optimizations applied
 
 - **Bulk insert using `unnest`** — I send the whole batch in one trip to the database instead of one trip per log. This was the biggest improvement for writing logs.
-- **Removed the trigram index.** Removing it raised my speed from 7,046 to 16,832 logs/sec (a **58% gain**), and it only cost me about 2 ms on `q=` searches. Since `q=` searches usually filter by time and service first, there aren't many rows left to scan anyway. I removed it in migration `003_drop_trgm_index.sql` and wrote my reasons there.
+- **Removed the trigram index.** Removing it raised my ingestion from 8,432 to 22,072
+  logs/sec — the index was costing me 62% of my write speed. It does make `q=` searches
+  much slower (392 ms instead of 7 ms), but since ingestion is the main job here, I chose
+  the write speed. I tested both GIN and GIST versions before deciding, and documented the
+  numbers in migration `005_drop_trgm_index_final.sql`.
 - **Moved aggregation to Postgres** — I use `date_bin` and `GROUP BY` inside the database instead of bringing all the rows to Node and counting them there.
-- **Limited the connection pool to 10** — Since the app only has 0.5 CPU, opening more connections just makes them wait.
-- **Postgres tuning**: I set `max_wal_size=2GB`, `shared_buffers=256MB`, `checkpoint_completion_target=0.9`, and `wal_compression=on`. It didn't increase the max speed (because the CPU is the limit, not the disk), but it stopped the checkpoint warning completely.
-- I kept `synchronous_commit` turned **on** on purpose: the rules say that a `200` response must mean the logs are safely saved.
+- **Connection pool raised to 20** — I started at 10, but raising it to 20 together with
+  a bigger WAL helped a lot under high load.
+- **Postgres tuning**: `max_wal_size=4GB`, `shared_buffers=256MB`,
+  `checkpoint_completion_target=0.9`, `wal_compression=on`. Raising `max_wal_size` from
+  2GB to 4GB (together with the bigger pool) lifted my ingestion from ~13,500 to
+  ~22,000 logs/sec, and it stopped the checkpoint warning completely.
+- I kept `synchronous_commit` turned **on** on purpose. I actually measured what
+  durability costs me: 22,465/sec with it off versus 22,072/sec with it on — under 2%.
+  That is because I write a whole batch with one `unnest` insert, so each batch costs one
+  WAL flush instead of one per log. Durability is nearly free here, and the rules say a
+  `200` must mean the logs are safely saved.
 
 ### Query plans
 
@@ -361,9 +383,14 @@ When `AUTH_ENABLED=true` and `LOADGEN_API_KEY` is set, my app creates this key a
 
 ## Known limitations
 
-- **Writing logs is a bit slower than the 15,000/sec goal when I reach 1M rows** (I got 13,567/sec). But it is faster than the goal when there are fewer logs (16,832/sec at 300k). The main reason is that Postgres uses all its CPU on my laptop.
+- **I now beat the 15,000/sec goal at 300k rows (22,072/sec), but throughput drops as the
+  table grows** — index maintenance gets more expensive with more rows. The main limit is
+  that Postgres uses all of its single CPU core on my laptop while my app sits at ~25%.
 - **Aggregation is too slow if I am writing logs at full speed at the same time** (I only got 0.4/sec, and p95 was 3.2 s). But if I stop writing logs, aggregation p95 is 760 ms, which is under the 1-second rule. Both reading and writing fight for the same single CPU core in Postgres.
 - **I only compare `attr.<key>` as strings** — I didn't add support for number ranges or greater/less than.
-- **Text search (`q`) doesn't have a trigram index**, so it needs other filters (like time or service) to narrow down the rows first. If you search just by text over a whole month, it will be slow. If someone really needs fast text search, they can turn the index back on with a one-line migration, but it will slow down writing.
+- **Text search (`q`) doesn't have a trigram index**, so it needs other filters (like time
+  or service) to narrow down the rows first. Searching by text alone over a wide range
+  takes ~390 ms instead of ~7 ms. I measured both GIN and GIST versions of the index and
+  documented the trade-off in migration `005_drop_trgm_index_final.sql`.
 - **The biggest batch I can accept is limited by Fastify's `bodyLimit`** (16 MB).
 - **I tested all of this on my personal laptop**, not on a strong production server.

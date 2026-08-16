@@ -23,7 +23,7 @@ services:
     command: >
       postgres
       -c shared_buffers=256MB
-      -c max_wal_size=2GB
+      -c max_wal_size=4GB
       -c checkpoint_completion_target=0.9
       -c wal_compression=on
       -c autovacuum_vacuum_scale_factor=0.05
