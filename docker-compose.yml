@@ -25,7 +25,7 @@ services:
       -c shared_buffers=256MB
       -c max_wal_size=4GB
       -c checkpoint_completion_target=0.9
-      -c wal_compression=on
+      -c wal_compression=off
       -c autovacuum_vacuum_scale_factor=0.05
     environment:
       POSTGRES_USER: loguser
