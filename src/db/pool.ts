@@ -11,7 +11,7 @@ const { Pool } = pg;
 // أكثر رح يقفوا بالطابور جوّا بوستجر بدون فايدة.
 export const pool = new Pool({
   connectionString: config.databaseUrl,
-  max: 20,
+  max: 10,
 });
 
 //  فحص بسيط بنستخدمه بالهيلث بنسأل القاعدة سؤال تافه سيليكت واحد

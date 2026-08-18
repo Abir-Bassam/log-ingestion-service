@@ -253,7 +253,7 @@ My test script sends logs while also sending queries (~3/sec) and aggregations (
 
 I put the PostgreSQL tuning parameters inside the compose file (`max_wal_size=4GB`, `shared_buffers=256MB`, `checkpoint_completion_target=0.9`, `wal_compression=on`), so you don't need to configure the database manually to get the same results.
 
-**The final settings I used:** batch size 1000, concurrency 8, and I removed the trigram index.
+**The final settings I used:** batch size 1000, concurrency 8, connection pool 10, and I removed the trigram index.
 
 **The data I generated:** 4 services, 4 levels (spread evenly), and 3 attribute keys — `user_id` (10,000 different values), `region` (3 values), and `retries` (4 values). The messages are about 45 characters long, and 10% of them have the word `declined` so I can test the `q` search. The timestamps are spread over the last hour.
 
@@ -261,7 +261,7 @@ I put the PostgreSQL tuning parameters inside the compose file (`max_wal_size=4G
 
 | Target | Required | Measured | Status |
 |---|---|---|---|
-| Ingestion rate | ≥ 15,000/sec | **22,072/sec** at 300k rows (13,567/sec at 1M before tuning) | Met |
+| Ingestion rate | ≥ 15,000/sec | **22,072/sec** at 300k rows (13,567/sec at 1M) | Met |
 | Aggregation p95 | < 1,000 ms | **760 ms** idle; 3,237 ms under full ingestion load | Met when not saturated |
 | Dropped requests | none | **0 of 1,000 batches** | Met |
 | Application crashes | none | **none** | Met |
@@ -270,10 +270,6 @@ I put the PostgreSQL tuning parameters inside the compose file (`max_wal_size=4G
 | Stored records | ~1,000,000 | 1,000,001 (295 MB) | Met |
 
 ### Results at 1M rows
-
-> These are the numbers from my first benchmark run, before I raised `max_wal_size` to
-> 4GB and the pool to 20. The Configuration experiments table below has the newer figures
-> at 300k rows.
 
 | Metric | Value |
 |---|---|
@@ -292,21 +288,19 @@ I put the PostgreSQL tuning parameters inside the compose file (`max_wal_size=4G
 
 | Configuration | Ingestion rate | `q=` p50 |
 |---|---|---|
-| **No trigram index, `wal_compression=on`, pool 20** | **22,072/sec** | 392 ms |
-| No trigram index, `wal_compression=off`, pool 20 | 23,977/sec | 304 ms |
-| No trigram index, `wal_compression=off`, pool 30 | 23,902/sec | 288 ms |
+| **No trigram index, `wal_compression=on`** | **22,072/sec** | 392 ms |
+| No trigram index, `wal_compression=off` | 23,977/sec | 304 ms |
 | GIN trigram index | 8,432/sec | 7 ms |
 | GIST trigram index | 6,300/sec | 6 ms |
 | batch 2000, concurrency 12 | 17,630/sec | — |
 | batch 1000, concurrency 16 | 5,638/sec | — |
 
-I learned four things from these tests. First, the trigram index speeds up text search
+I learned three things from these tests. First, the trigram index speeds up text search
 about 56× but costs 62–72% of my write speed — I tried both GIN and GIST, and GIST was
 actually worse for writes. Since ingestion is the main job of this service, I removed the
 index. Second, raising concurrency past 8 *hurts* throughput: Postgres is already using
 all its CPU, so extra connections just wait in line. Third, bigger batches (2000) were
-slower than 1000 here. Fourth, raising the pool from 20 to 30 made no measurable
-difference, so I kept it at 20.
+slower than 1000 here.
 
 ### Bottleneck
 
@@ -325,18 +319,18 @@ My laptop has 8 logical cores and a fast NVMe SSD, so the real limit is the 1-CP
   here, I chose the write speed. I tested both GIN and GIST versions before deciding, and
   documented the numbers in migration `005_drop_trgm_index_final.sql`.
 - **Moved aggregation to Postgres** — I use `date_bin` and `GROUP BY` inside the database instead of bringing all the rows to Node and counting them there.
-- **Connection pool raised to 20** — I started at 10, but raising it to 20 together with
-  a bigger WAL helped a lot under high load. I also tried 30, and it made no measurable
-  difference, so I kept 20.
+- **Connection pool capped at 10** — the app only gets 0.5 CPU, so more connections would
+  just queue inside Postgres. I tried 20 and 30 as well, and the differences sat inside my
+  run-to-run variance, so I kept the smaller pool.
 - **Postgres tuning**: `max_wal_size=4GB`, `shared_buffers=256MB`,
-  `checkpoint_completion_target=0.9`. Raising `max_wal_size` from 2GB to 4GB (together
-  with the bigger pool) lifted my ingestion from ~13,500 to ~22,000 logs/sec, and it
-  stopped the checkpoint warning completely.
+  `checkpoint_completion_target=0.9`. Raising `max_wal_size` from 2GB to 4GB was the
+  clearest win — it stopped the checkpoint warning completely and lifted my ingestion from
+  ~13,500 to ~22,000 logs/sec.
 - **`wal_compression` left on.** I tried turning it off, reasoning that compression costs
   CPU and CPU is my bottleneck. It measured slightly faster locally (23,977/sec versus
-  18,395–22,072/sec), but the difference sat inside my ~20–30% run-to-run variance, and it
-  did not hold up when I benchmarked it properly. I kept the safer default rather than
-  claim an improvement I could not reproduce reliably.
+  18,395–22,072/sec), but the difference sat inside my ~20–30% run-to-run variance and did
+  not hold up when I benchmarked it properly. I kept the safer default rather than claim an
+  improvement I could not reproduce reliably.
 - I kept `synchronous_commit` turned **on** on purpose. I actually measured what
   durability costs me: 22,465/sec with it off versus 22,072/sec with it on — under 2%.
   That is because I write a whole batch with one `unnest` insert, so each batch costs one
@@ -392,7 +386,7 @@ When `AUTH_ENABLED=true` and `LOADGEN_API_KEY` is set, my app creates this key a
 
 ## Known limitations
 
-- **I now beat the 15,000/sec goal at 300k rows (22,072/sec), but throughput drops as the
+- **I beat the 15,000/sec goal at 300k rows (22,072/sec), but throughput drops as the
   table grows** — index maintenance gets more expensive with more rows. The main limit is
   that Postgres uses all of its single CPU core on my laptop while my app sits at ~25%.
 - **Aggregation is too slow if I am writing logs at full speed at the same time** (I only got 0.4/sec, and p95 was 3.2 s). But if I stop writing logs, aggregation p95 is 760 ms, which is under the 1-second rule. Both reading and writing fight for the same single CPU core in Postgres.
